@@ -36,12 +36,10 @@ const PopularDishes = () => {
               className="group cursor-pointer rounded-2xl overflow-hidden border border-border bg-card hover:border-primary/30 transition-colors"
             >
               <div className="aspect-[4/3] overflow-hidden relative">
-                <img
-                  src={dish.img}
-                  alt={dish.name}
-                  className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
-                  loading="lazy"
-                />
+                
+                <div className="w-full h-full bg-blue-100">
+
+                </div>
                 <button className="absolute bottom-3 right-3 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <Plus className="w-4 h-4" />
                 </button>
