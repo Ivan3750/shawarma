@@ -473,3 +473,17 @@ code { font-size: 12px; background: var(--surface-hover); padding: 2px 6px; bord
 @media (min-width: 960px) { .toast { bottom: 28px; left: calc(50% + var(--sidebar) / 2); } }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------- sync status ---------- */
+.sync-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.sync-badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.sync-badge.good i { background: var(--good); }
+.sync-badge.warn i { background: var(--warn); }
+.sync-badge.bad i { background: var(--bad); }
+.sync-badge.bad { color: var(--bad); }
+.sync-badge.busy i { background: var(--brand); animation: sync-pulse 1s ease-in-out infinite; }
+@keyframes sync-pulse { 50% { opacity: .3; } }
+.side-foot.sync-badge { padding: 8px; border-radius: 10px; }
+.side-foot.sync-badge:hover { background: var(--surface-hover); }
+.sync-dot.sync-badge { justify-content: center; }
+.sync-dot.sync-badge i { width: 10px; height: 10px; }

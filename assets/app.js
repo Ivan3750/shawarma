@@ -185,12 +185,221 @@
     s.channels = Array.isArray(data.channels) && data.channels.length ? data.channels : base.channels;
     s.entries = Array.isArray(data.entries) ? data.entries : [];
     s.deals = Array.isArray(data.deals) ? data.deals : [];
+    s.deleted = data.deleted && typeof data.deleted === 'object' ? data.deleted : {};
     return s;
   }
   let state = load();
-  function save() {
+  function persistLocal() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
     catch { toast('Не вдалося зберегти дані в браузері'); }
+  }
+  function save() {
+    persistLocal();
+    schedulePush();
+  }
+  const nowISO = () => new Date().toISOString();
+  // Tombstones let deletions propagate to other devices instead of being merged back.
+  const tomb = (id) => { state.deleted[id] = nowISO(); };
+  const touchSettings = () => { state.settingsUpdated = nowISO(); };
+  /** Replace all data (demo, reset, restore) while tombstoning records that disappear. */
+  function replaceState(next) {
+    const keep = new Set([...next.channels, ...next.entries, ...next.deals].map((x) => x.id));
+    const deleted = { ...state.deleted, ...(next.deleted || {}) };
+    [...state.channels, ...state.entries, ...state.deals].forEach((x) => { if (!keep.has(x.id)) deleted[x.id] = nowISO(); });
+    keep.forEach((id) => delete deleted[id]);
+    const stamp = nowISO();
+    [...next.channels, ...next.entries, ...next.deals].forEach((x) => { x.updated = stamp; });
+    state = { ...next, deleted, settingsUpdated: stamp, ui: state.ui };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cloud sync (Vercel function + MySQL). The whole state is one JSON document;
+  // devices merge by record id + `updated` timestamp and retry on version conflicts.
+  // ---------------------------------------------------------------------------
+  const SYNC_KEY = 'webhjerte-sync-v1';
+  const defaultApiUrl = () => (location.hostname.endsWith('github.io') ? 'https://shawarma-five.vercel.app/api/data' : `${location.origin}/api/data`);
+  function loadSync() {
+    try { return { url: '', password: '', version: 0, pushedHash: '', lastSync: null, ...JSON.parse(localStorage.getItem(SYNC_KEY) || '{}') }; }
+    catch { return { url: '', password: '', version: 0, pushedHash: '', lastSync: null }; }
+  }
+  let sync = loadSync();
+  const saveSync = () => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); } catch { /* ignore */ } };
+  const syncEnabled = () => !!(sync.url && sync.password);
+  let syncStatus = syncEnabled() ? 'syncing' : 'off';
+  let syncMessage = '';
+
+  const payloadOf = (st) => { const { ui, ...rest } = st; return rest; };
+  function hashStr(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return `${(h >>> 0).toString(36)}.${str.length}`;
+  }
+
+  function mergeList(local, remote, deleted) {
+    const map = new Map();
+    for (const r of remote) map.set(r.id, r);
+    for (const l of local) {
+      const r = map.get(l.id);
+      if (!r || (l.updated || '') > (r.updated || '')) map.set(l.id, l);
+    }
+    return [...map.values()].filter((x) => !deleted[x.id]);
+  }
+  function mergeStates(local, remoteRaw) {
+    const remote = normalize(remoteRaw);
+    const deleted = { ...remote.deleted, ...local.deleted };
+    const localNewer = (local.settingsUpdated || '') > (remote.settingsUpdated || '');
+    const settings = { ...(localNewer ? local.settings : remote.settings), theme: local.settings.theme };
+    return {
+      ...remote,
+      settings,
+      settingsUpdated: localNewer ? local.settingsUpdated : remote.settingsUpdated,
+      channels: mergeList(local.channels, remote.channels, deleted),
+      entries: mergeList(local.entries, remote.entries, deleted),
+      deals: mergeList(local.deals, remote.deals, deleted),
+      deleted,
+      ui: local.ui,
+    };
+  }
+
+  const SYNC_LABELS = {
+    off: ['Лише цей пристрій', ''],
+    idle: ['Синхронізовано', 'good'],
+    syncing: ['Синхронізація…', 'busy'],
+    offline: ['Офлайн — збережено локально', 'warn'],
+    auth: ['Невірний пароль синхронізації', 'bad'],
+    error: ['Помилка синхронізації', 'bad'],
+  };
+  function setSyncStatus(st, msg = '') {
+    syncStatus = st; syncMessage = msg;
+    const [label, cls] = SYNC_LABELS[st];
+    $$('[data-sync-badge]').forEach((el) => {
+      el.classList.remove('good', 'warn', 'bad', 'busy');
+      if (cls) el.classList.add(cls);
+      el.title = msg || label;
+      const t = el.querySelector('[data-sync-text]'); if (t) t.textContent = label;
+    });
+    const info = $('[data-sync-info]');
+    if (info) info.innerHTML = syncInfoHtml();
+  }
+  function syncInfoHtml() {
+    const [label, cls] = SYNC_LABELS[syncStatus];
+    const last = sync.lastSync ? new Intl.DateTimeFormat('uk-UA', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sync.lastSync)) : '—';
+    return `<span class="sync-badge ${cls}"><i></i>${label}</span>${syncEnabled() ? ` <span class="muted">· остання синхронізація ${last}</span>` : ''}${syncMessage ? `<br><small class="muted">${esc(syncMessage)}</small>` : ''}`;
+  }
+
+  async function syncApi(method, body) {
+    const res = await fetch(sync.url, {
+      method,
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${sync.password}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let json = null;
+    try { json = await res.json(); } catch { /* non-JSON error page */ }
+    return { status: res.status, json };
+  }
+  function syncFailed(r) {
+    if (r.status === 401) setSyncStatus('auth', 'Перевірте пароль (APP_PASSWORD на сервері).');
+    else if (r.json?.error === 'not_configured') setSyncStatus('error', 'На сервері не задано DATABASE_URL або APP_PASSWORD.');
+    else if (r.json?.error === 'db_unavailable') setSyncStatus('error', 'Сервер не може підключитися до MySQL.');
+    else setSyncStatus('error', `Відповідь сервера: ${r.status}`);
+  }
+  function applyRemote(doc) {
+    if (doc.data) {
+      state = mergeStates(state, doc.data);
+      persistLocal();
+      render();
+    }
+    sync.version = doc.version;
+    saveSync();
+  }
+
+  let pushTimer, pushing = false, pushAgain = false;
+  function schedulePush() {
+    if (!syncEnabled()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushNow, 700);
+  }
+  async function pushNow() {
+    if (!syncEnabled()) return;
+    if (pushing) { pushAgain = true; return; }
+    pushing = true;
+    try {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const data = payloadOf(state);
+        const str = JSON.stringify(data);
+        const h = hashStr(str);
+        if (h === sync.pushedHash) { setSyncStatus('idle'); break; }
+        setSyncStatus('syncing');
+        const r = await syncApi('PUT', { data, baseVersion: sync.version });
+        if (r.status === 200) {
+          Object.assign(sync, { version: r.json.version, pushedHash: h, lastSync: nowISO() });
+          saveSync(); setSyncStatus('idle');
+          break;
+        }
+        if (r.status === 409 && r.json) { applyRemote(r.json); continue; } // another device saved first
+        syncFailed(r);
+        break;
+      }
+    } catch {
+      setSyncStatus('offline', 'Зміни відправляться, щойно з’явиться інтернет.');
+    } finally {
+      pushing = false;
+      if (pushAgain) { pushAgain = false; pushNow(); }
+    }
+  }
+  async function pullNow() {
+    if (!syncEnabled() || pushing) return;
+    try {
+      const r = await syncApi('GET');
+      if (r.status !== 200) return syncFailed(r);
+      if (r.json.version !== sync.version) applyRemote(r.json);
+      sync.lastSync = nowISO(); saveSync();
+      await pushNow(); // sends local edits made offline, if any
+      if (syncStatus === 'syncing') setSyncStatus('idle');
+    } catch {
+      setSyncStatus('offline', 'Сервер недоступний — дані збережено на цьому пристрої.');
+    }
+  }
+  async function connectSync(url, password) {
+    const prev = sync;
+    sync = { url: url || defaultApiUrl(), password, version: 0, pushedHash: '', lastSync: null };
+    setSyncStatus('syncing');
+    try {
+      const r = await syncApi('GET');
+      if (r.status !== 200) {
+        syncFailed(r);
+        const msg = syncMessage || SYNC_LABELS[syncStatus][0];
+        sync = prev;
+        setSyncStatus(syncEnabled() ? 'idle' : 'off');
+        toast(r.status === 401 ? 'Невірний пароль' : msg);
+        return;
+      }
+      const remote = r.json;
+      const remoteHas = remote.data && ((remote.data.entries || []).length || (remote.data.deals || []).length);
+      const localHas = state.entries.length || state.deals.length;
+      if (remoteHas && localHas && !confirm('На сервері вже є дані.\n\nOK — об’єднати їх із даними цього пристрою.\nСкасувати — замінити дані цього пристрою даними з сервера.')) {
+        state = { ...normalize(remote.data), ui: state.ui };
+        persistLocal();
+        sync.version = remote.version;
+      } else {
+        applyRemote(remote);
+      }
+      sync.lastSync = nowISO();
+      saveSync();
+      await pushNow();
+      render();
+      toast('Синхронізацію підключено ✓');
+    } catch {
+      sync = prev;
+      setSyncStatus(syncEnabled() ? 'offline' : 'off');
+      toast('Сервер недоступний — перевірте адресу API');
+    }
+  }
+  function disconnectSync() {
+    sync = { url: '', password: '', version: 0, pushedHash: '', lastSync: null };
+    saveSync(); setSyncStatus('off'); render();
+    toast('Синхронізацію вимкнено — дані лишились на пристрої');
   }
 
   const channelById = (id) => state.channels.find((c) => c.id === id);
@@ -779,13 +988,26 @@
             <label class="field"><span>Листів на день</span><input class="input" inputmode="numeric" data-goal="emailsPerDay" value="${g.emailsPerDay || ''}" placeholder="0" /></label>
           </div>
         </section>
+        <section class="card settings-section span-2">
+          <h2>Синхронізація між пристроями</h2>
+          <p>Дані зберігаються у вашій базі MySQL (Aiven) через API на Vercel. Підключіть однаковий пароль на телефоні й ноутбуці — і всі записи будуть спільними.</p>
+          <form class="form-grid" data-sync-form autocomplete="off">
+            <label class="field"><span>Адреса API</span><input class="input" name="url" type="url" inputmode="url" value="${esc(sync.url || defaultApiUrl())}" placeholder="${esc(defaultApiUrl())}" /></label>
+            <label class="field"><span>Пароль (APP_PASSWORD)</span><input class="input" name="password" type="password" value="${esc(sync.password)}" placeholder="••••••••" autocomplete="current-password" /></label>
+            <div class="field full"><div data-sync-info>${syncInfoHtml()}</div></div>
+            <div class="btn-row full">
+              <button class="btn btn-primary" type="submit">${syncEnabled() ? 'Перепідключити' : 'Підключити'}</button>
+              ${syncEnabled() ? `<button class="btn" type="button" data-action="sync-now">Синхронізувати зараз</button><button class="btn btn-ghost btn-danger" type="button" data-action="sync-off">Вимкнути</button>` : ''}
+            </div>
+          </form>
+        </section>
         <section class="card settings-section">
           <h2>Канали</h2><p>Додавайте, перейменовуйте або архівуйте канали залучення.</p>
           <div class="list">${state.channels.map((c) => `<button class="row" data-action="edit-channel" data-id="${esc(c.id)}"><span class="dot" style="--c:${chColor(c)}"></span><span class="row-main"><span class="row-title">${esc(c.name)}</span><span class="row-meta">${KINDS[c.kind]?.label || ''}${c.archived ? ' · архів' : ''}</span></span></button>`).join('')}</div>
           <div class="btn-row" style="margin-top:12px"><button class="btn" data-action="add-channel">${icon('plus')} Новий канал</button></div>
         </section>
         <section class="card settings-section">
-          <h2>Дані</h2><p>Усе зберігається локально в цьому браузері. Щоб перенести дані між телефоном і ноутбуком — експортуйте JSON та імпортуйте на іншому пристрої.</p>
+          <h2>Дані</h2><p>Бекап, імпорт та експорт. Копія даних завжди зберігається і в цьому браузері, тож дашборд працює навіть без інтернету.</p>
           <div class="btn-row">
             <button class="btn" data-action="export-json">${icon('download')} Бекап JSON</button>
             <button class="btn" data-action="import-json">${icon('upload')} Відновити JSON</button>
@@ -811,7 +1033,11 @@
   let sheetSubmit = null;
   function openSheet({ title, body, foot, onSubmit, onOpen }) {
     $('#sheet-title').textContent = title;
-    $('#sheet-body').innerHTML = body;
+    // fresh node so listeners added by a previous form's onOpen don't leak into this one
+    const old = $('#sheet-body');
+    const fresh = old.cloneNode(false);
+    old.replaceWith(fresh);
+    fresh.innerHTML = body;
     $('#sheet-foot').innerHTML = foot;
     sheetSubmit = onSubmit;
     if (!sheet.open) sheet.showModal();
@@ -881,7 +1107,7 @@
       onSubmit(action, fd) {
         if (action === 'delete') {
           if (!confirm('Видалити цей запис?')) return;
-          state.entries = state.entries.filter((x) => x.id !== entry.id);
+          state.entries = state.entries.filter((x) => x.id !== entry.id); tomb(entry.id);
           save(); closeSheet(); render(); toast('Запис видалено');
           return;
         }
@@ -920,13 +1146,13 @@
       onSubmit(action, fd) {
         if (action === 'delete') {
           if (!confirm('Видалити цього клієнта?')) return;
-          state.deals = state.deals.filter((x) => x.id !== deal.id);
+          state.deals = state.deals.filter((x) => x.id !== deal.id); tomb(deal.id);
           save(); closeSheet(); render(); toast('Видалено');
           return;
         }
         const name = String(fd.get('name') || '').trim();
         if (!name) { toast('Вкажіть назву'); return; }
-        const rec = { id: deal?.id || uid(), name, channelId: fd.get('channelId'), date: fd.get('date') || today(), value: num(fd.get('value')), status: fd.get('status'), note: String(fd.get('note') || '').trim() };
+        const rec = { id: deal?.id || uid(), name, channelId: fd.get('channelId'), date: fd.get('date') || today(), value: num(fd.get('value')), status: fd.get('status'), note: String(fd.get('note') || '').trim(), updated: nowISO() };
         if (isEdit) state.deals = state.deals.map((x) => (x.id === rec.id ? rec : x));
         else state.deals.push(rec);
         save(); closeSheet(); render(); toast(rec.status === 'won' ? 'Вітаю з клієнтом! 🎉' : 'Збережено ✓');
@@ -960,14 +1186,14 @@
       },
       onSubmit(action, fd) {
         if (action === 'delete') {
-          if (inUse) { ch.archived = true; toast('Канал в архіві — історія збережена'); }
-          else { if (!confirm('Видалити канал?')) return; state.channels = state.channels.filter((x) => x.id !== ch.id); toast('Канал видалено'); }
+          if (inUse) { ch.archived = true; ch.updated = nowISO(); toast('Канал в архіві — історія збережена'); }
+          else { if (!confirm('Видалити канал?')) return; state.channels = state.channels.filter((x) => x.id !== ch.id); tomb(ch.id); toast('Канал видалено'); }
           save(); closeSheet(); render();
           return;
         }
         const name = String(fd.get('name') || '').trim();
         if (!name) { toast('Вкажіть назву'); return; }
-        const rec = { id: ch?.id || slug(name), name, kind: fd.get('kind'), color: Number(fd.get('color')), archived: fd.get('archived') === 'on' };
+        const rec = { id: ch?.id || slug(name), name, kind: fd.get('kind'), color: Number(fd.get('color')), archived: fd.get('archived') === 'on', updated: nowISO() };
         if (isEdit) Object.assign(ch, rec);
         else state.channels.push(rec);
         save(); closeSheet(); render(); toast('Збережено ✓');
@@ -1070,7 +1296,7 @@
       if (!date || !chName) { skipped++; continue; }
       let ch = state.channels.find((c) => c.id.toLowerCase() === chName.toLowerCase() || c.name.toLowerCase() === chName.toLowerCase());
       if (!ch) {
-        ch = { id: slug(chName), name: chName, kind: /mail|лист/i.test(chName) ? 'outreach' : /ads|реклам/i.test(chName) ? 'ads' : 'organic', color: state.channels.length % SERIES, archived: false };
+        ch = { id: slug(chName), name: chName, kind: /mail|лист/i.test(chName) ? 'outreach' : /ads|реклам/i.test(chName) ? 'ads' : 'organic', color: state.channels.length % SERIES, archived: false, updated: nowISO() };
         state.channels.push(ch); newCh++;
       }
       const rec = { id: uid(), date, channelId: ch.id, note: idx.note !== undefined ? (r[idx.note] || '').trim() : '', updated: new Date().toISOString() };
@@ -1151,6 +1377,7 @@
     const { html, after } = VIEWS[r]();
     $('#view').innerHTML = html;
     after && after();
+    setSyncStatus(syncStatus, syncMessage);
   }
 
   const ACTIONS = {
@@ -1169,6 +1396,8 @@
       save(); render();
     },
     'deal-filter': (el) => { dealFilter = el.dataset.value; render(); },
+    'sync-now': () => { sync.pushedHash = ''; pullNow(); },
+    'sync-off': () => { if (confirm('Вимкнути синхронізацію на цьому пристрої?')) disconnectSync(); },
     'journal-channel': (el) => { state.ui.channel = el.dataset.id; save(); },
     more: () => { journalLimit += 60; render(); },
     'toggle-theme': () => {
@@ -1176,7 +1405,7 @@
       state.settings.theme = dark ? 'light' : 'dark'; save(); render();
     },
     theme: (el) => { state.settings.theme = el.dataset.value; save(); render(); },
-    brand: (el) => { state.settings.brand = el.dataset.value; save(); render(); },
+    brand: (el) => { state.settings.brand = el.dataset.value; touchSettings(); save(); render(); },
     'export-json': () => download(`webhjerte-backup-${today()}.json`, JSON.stringify(state, null, 2), 'application/json'),
     'import-json': () => $('#file-json').click(),
     'export-csv': exportCSV,
@@ -1184,11 +1413,11 @@
     'csv-template': csvTemplate,
     demo: () => {
       if ((state.entries.length || state.deals.length) && !confirm('Демо-дані замінять поточні дані. Спершу зробіть бекап. Продовжити?')) return;
-      state = demoData(); save(); render(); toast('Демо-дані завантажено');
+      replaceState(demoData()); save(); render(); toast('Демо-дані завантажено');
     },
     reset: () => {
       if (!confirm('Видалити всі записи, клієнтів і канали? Це не можна скасувати.')) return;
-      const s = defaultState(); s.settings = state.settings; state = s; save(); render(); toast('Дані очищено');
+      const s = defaultState(); s.settings = state.settings; replaceState(s); save(); render(); toast('Дані очищено');
     },
   };
 
@@ -1206,10 +1435,11 @@
     if (el.dataset.setting) {
       const k = el.dataset.setting;
       state.settings[k] = k === 'business' ? el.value.trim() || 'Webhjerte' : el.value;
+      touchSettings();
       save(); render(); toast('Збережено ✓');
       return;
     }
-    if (el.dataset.goal) { state.settings.goals[el.dataset.goal] = num(el.value); save(); toast('Ціль збережено ✓'); }
+    if (el.dataset.goal) { state.settings.goals[el.dataset.goal] = num(el.value); touchSettings(); save(); toast('Ціль збережено ✓'); }
   });
   let searchTimer;
   document.addEventListener('input', (e) => {
@@ -1233,18 +1463,34 @@
       const data = JSON.parse(text);
       if (!data || !Array.isArray(data.entries)) throw new Error('bad');
       if (!confirm(`Відновити бекап: ${data.entries.length} записів, ${(data.deals || []).length} клієнтів? Поточні дані буде замінено.`)) return;
-      state = normalize(data); save(); render(); toast('Бекап відновлено ✓');
+      replaceState(normalize(data)); save(); render(); toast('Бекап відновлено ✓');
     } catch { toast('Це не схоже на бекап Webhjerte'); }
   });
   readFile($('#file-csv'), importCSV);
 
   window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (state.settings.theme === 'auto') render(); });
-  window.addEventListener('storage', (e) => { if (e.key === STORE_KEY) { state = load(); render(); } });
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORE_KEY) { state = load(); render(); }
+    if (e.key === SYNC_KEY) sync = loadSync();
+  });
+  document.addEventListener('submit', (e) => {
+    if (!e.target.matches('[data-sync-form]')) return;
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const password = String(fd.get('password') || '');
+    if (!password) { toast('Введіть пароль'); return; }
+    connectSync(String(fd.get('url') || '').trim(), password);
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pullNow(); });
+  window.addEventListener('online', pullNow);
+  setInterval(() => { if (document.visibilityState === 'visible') pullNow(); }, 60000);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'n' && !sheet.open && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !e.metaKey && !e.ctrlKey) { e.preventDefault(); entryForm(null); }
   });
 
   $$('[data-icon]').forEach((el) => { if (!el.innerHTML) el.outerHTML = icon(el.getAttribute('data-icon')); });
   render();
+  setSyncStatus(syncStatus);
+  pullNow();
 })();

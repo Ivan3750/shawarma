@@ -28,7 +28,7 @@
       <button class="btn btn-primary side-add" data-action="add-entry">
         <span data-icon="plus"></span> Додати дані
       </button>
-      <p class="side-foot">Дані зберігаються у цьому браузері. Робіть експорт у «Налаштуваннях».</p>
+      <a class="side-foot sync-badge" href="#/settings" data-sync-badge><i></i><span data-sync-text>Лише цей пристрій</span></a>
     </aside>
 
     <div class="main">
@@ -39,6 +39,7 @@
         </a>
         <h1 class="page-title" data-page-title>Огляд</h1>
         <div class="topbar-actions">
+          <a class="icon-btn only-mobile sync-dot" href="#/settings" data-sync-badge aria-label="Статус синхронізації"><i></i></a>
           <button class="icon-btn" data-action="toggle-theme" aria-label="Змінити тему"><span data-icon="contrast"></span></button>
           <a class="icon-btn only-mobile" href="#/settings" aria-label="Налаштування"><span data-icon="settings"></span></a>
         </div>
