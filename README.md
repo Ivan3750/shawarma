@@ -43,6 +43,6 @@ date,channel,spend,impressions,clicks,emails,replies,posts,leads,meetings,note
 ## Запуск
 
 - Локально: відкрийте `index.html` або запустіть `python3 -m http.server` і перейдіть на `http://localhost:8000`.
-- Онлайн: GitHub → Settings → Pages → *Deploy from a branch* → оберіть гілку і `/ (root)`.
+- Онлайн: https://ivan3750.github.io/shawarma/ — кожен пуш у `main` автоматично публікується (workflow `.github/workflows/pages.yml` копіює `main` у гілку `gh-pages`, яку роздає GitHub Pages).
 
 Фірмовий колір задано змінною `--brand` в `assets/styles.css`, а змінити його можна й в інтерфейсі (Налаштування → Фірмовий колір).
