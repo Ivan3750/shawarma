@@ -296,13 +296,28 @@
     });
     let json = null;
     try { json = await res.json(); } catch { /* non-JSON error page */ }
-    return { status: res.status, json };
+    // Anything that isn't our API's JSON (e.g. an HTML page) means the URL has no sync API behind it.
+    const ok = res.status === 200 && json && typeof json === 'object' && 'version' in json;
+    return { status: ok || res.status !== 200 ? res.status : 404, json: res.status === 200 && !ok ? null : json };
   }
   function syncFailed(r) {
     if (r.status === 401) setSyncStatus('auth', 'Перевірте пароль (APP_PASSWORD на сервері).');
+    else if (!r.json) setSyncStatus('error', 'За цією адресою немає API синхронізації: сайт на Vercel не задеплоєний або адреса неправильна.');
     else if (r.json?.error === 'not_configured') setSyncStatus('error', 'На сервері не задано DATABASE_URL або APP_PASSWORD.');
-    else if (r.json?.error === 'db_unavailable') setSyncStatus('error', 'Сервер не може підключитися до MySQL.');
+    else if (r.json?.error === 'db_unavailable' || r.json?.error === 'server_error') setSyncStatus('error', mysqlHint(r.json));
     else setSyncStatus('error', `Відповідь сервера: ${r.status}`);
+  }
+  function mysqlHint({ code, message = '' }) {
+    const c = String(code || '');
+    const m = String(message);
+    let hint;
+    if (c === 'ERR_INVALID_URL' || /Invalid URL/i.test(m)) hint = 'DATABASE_URL має неправильний формат — скопіюйте Service URI з Aiven повністю (mysql://avnadmin:…@…:порт/defaultdb).';
+    else if (['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ECONNRESET'].includes(c)) hint = 'Немає з’єднання з Aiven: перевірте, що сервіс у статусі Running (безкоштовний план вимикається після простою) і що в Allowed IP addresses є 0.0.0.0/0 — у Vercel немає фіксованих IP.';
+    else if (c === 'ER_ACCESS_DENIED_ERROR') hint = 'Aiven відхилив логін або пароль з DATABASE_URL.';
+    else if (c === 'ER_BAD_DB_ERROR') hint = 'Бази з DATABASE_URL не існує — для Aiven зазвичай це defaultdb.';
+    else if (/SSL|CERT|TLS/i.test(c) || /certificate|ssl|tls/i.test(m)) hint = 'Проблема з SSL: видаліть MYSQL_CA_CERT у Vercel або вставте CA certificate з Aiven повністю (з рядками BEGIN/END).';
+    else hint = 'Сервер не може підключитися до MySQL.';
+    return `${hint}${c || m ? ` [${[c, m].filter(Boolean).join(': ')}]` : ''}`;
   }
   function applyRemote(doc) {
     if (doc.data) {
@@ -369,10 +384,8 @@
       const r = await syncApi('GET');
       if (r.status !== 200) {
         syncFailed(r);
-        const msg = syncMessage || SYNC_LABELS[syncStatus][0];
         sync = prev;
-        setSyncStatus(syncEnabled() ? 'idle' : 'off');
-        toast(r.status === 401 ? 'Невірний пароль' : msg);
+        toast(r.status === 401 ? 'Невірний пароль' : 'Помилка — деталі в блоці «Синхронізація»');
         return;
       }
       const remote = r.json;
@@ -392,8 +405,8 @@
       toast('Синхронізацію підключено ✓');
     } catch {
       sync = prev;
-      setSyncStatus(syncEnabled() ? 'offline' : 'off');
-      toast('Сервер недоступний — перевірте адресу API');
+      setSyncStatus('error', 'Не вдалося з’єднатися з API. Перевірте, що сайт задеплоєний на Vercel і адреса правильна.');
+      toast('Не вдалося з’єднатися з API');
     }
   }
   function disconnectSync() {

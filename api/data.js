@@ -63,6 +63,9 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+// Only sent to authorized callers, so the owner can see why MySQL refused the connection.
+const errInfo = (err) => ({ code: (err && err.code) || null, message: String((err && err.message) || err).slice(0, 300) });
+
 const toDoc = (row) => (row ? { version: row.version, updatedAt: row.updated_at, data: JSON.parse(row.data) } : { version: 0, updatedAt: null, data: null });
 
 module.exports = async function handler(req, res) {
@@ -79,7 +82,7 @@ module.exports = async function handler(req, res) {
 
   let pool;
   try { pool = await getPool(); }
-  catch (err) { console.error(err); return send(res, 502, { error: 'db_unavailable' }); }
+  catch (err) { console.error(err); return send(res, 502, { error: 'db_unavailable', ...errInfo(err) }); }
 
   try {
     if (req.method === 'GET') {
@@ -122,6 +125,6 @@ module.exports = async function handler(req, res) {
     return send(res, 405, { error: 'method_not_allowed' });
   } catch (err) {
     console.error(err);
-    return send(res, 500, { error: 'server_error' });
+    return send(res, 500, { error: 'server_error', ...errInfo(err) });
   }
 };
