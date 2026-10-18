@@ -1,17 +1,70 @@
 <!doctype html>
-<html lang="da">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shawarma Town – Fresh Shawarma, Pizza & Burgers in Horsens</title>
-    <meta name="description" content="Shawarma Town serves fresh shawarma, pizza, burgers and grill dishes in Horsens, Denmark. Order pickup or delivery today." />
-    <meta property="og:title" content="Shawarma Town – Horsens" />
-    <meta property="og:description" content="Fresh Shawarma, Pizza & Burgers in Horsens, Denmark." />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Webhjerte Growth</title>
+  <meta name="description" content="Webhjerte — контроль залучення клієнтів: витрати, дохід, трафік, CTR, холодні листи та ліди по каналах." />
+  <meta name="theme-color" content="#E63950" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Webhjerte" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon.svg" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Навігація">
+      <a class="brand" href="#/overview">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-text"><strong data-bind="business">Webhjerte</strong><small>Growth</small></span>
+      </a>
+      <nav class="side-nav" data-nav></nav>
+      <button class="btn btn-primary side-add" data-action="add-entry">
+        <span data-icon="plus"></span> Додати дані
+      </button>
+      <p class="side-foot">Дані зберігаються у цьому браузері. Робіть експорт у «Налаштуваннях».</p>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <a class="brand brand-compact" href="#/overview">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <strong data-bind="business">Webhjerte</strong>
+        </a>
+        <h1 class="page-title" data-page-title>Огляд</h1>
+        <div class="topbar-actions">
+          <button class="icon-btn" data-action="toggle-theme" aria-label="Змінити тему"><span data-icon="contrast"></span></button>
+          <a class="icon-btn only-mobile" href="#/settings" aria-label="Налаштування"><span data-icon="settings"></span></a>
+        </div>
+      </header>
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+
+    <nav class="bottom-nav" data-bottom-nav aria-label="Навігація"></nav>
+  </div>
+
+  <dialog class="sheet" id="sheet" aria-labelledby="sheet-title">
+    <form method="dialog" class="sheet-inner" id="sheet-form" novalidate>
+      <header class="sheet-head">
+        <h2 id="sheet-title"></h2>
+        <button type="button" class="icon-btn" data-action="close-sheet" aria-label="Закрити"><span data-icon="x"></span></button>
+      </header>
+      <div class="sheet-body" id="sheet-body"></div>
+      <footer class="sheet-foot" id="sheet-foot"></footer>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="file-json" accept="application/json,.json" hidden />
+  <input type="file" id="file-csv" accept=".csv,text/csv,text/plain" hidden />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="assets/app.js"></script>
+</body>
 </html>

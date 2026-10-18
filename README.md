@@ -1,73 +1,48 @@
-# Welcome to your Lovable project
+# Webhjerte Growth
 
-## Project info
+Дашборд для контролю залучення клієнтів Webhjerte: скільки витрачено, скільки отримано, звідки трафік, CTR, скільки холодних листів надіслано і що з цього стало клієнтами.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Без збірки й сервера: це статичний сайт (`index.html` + `assets/`), він працює на телефоні й на десктопі, а на iPhone/Android його можна додати на головний екран.
 
-## How can I edit this code?
+## Що вміє
 
-There are several ways of editing your application.
+- **Огляд**: KPI за обраний період (витрати, дохід, прибуток / ROI / ROAS, клієнти, ліди, кліки, CTR, листи) порівняно з попереднім таким самим періодом. Також графік «витрати vs дохід», воронка «покази → кліки → ліди → зустрічі → клієнти», блок холодних листів із денною ціллю й серією днів, ліди по каналах, цілі місяця і таблиця ефективності каналів із сортуванням (CTR, CPC, CPL, CAC, ROAS…).
+- **Канали**: картки по кожному каналу з ключовими метриками й динамікою. За замовчуванням є Google Ads, Meta Ads, Cold mail, LinkedIn, Instagram і Facebook пости. Можна додати свої канали (TikTok, SEO, рекомендації…).
+- **Журнал**: усі записи, які ви внесли вручну, згруповані по днях, із пошуком і фільтром за каналом.
+- **Клієнти**: ліди й угоди зі статусами *Лід → Зустріч → Пропозиція → Клієнт / Втрачено*. Угода зі статусом «Клієнт» рахується як дохід каналу на дату угоди.
+- **Налаштування**: назва, валюта, фірмовий колір, світла або темна тема, цілі (бюджет, дохід, ліди на місяць, листи на день), бекап і відновлення JSON, імпорт і експорт CSV, демо-дані.
 
-**Use Lovable**
+## Як вносити дані
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+Натисніть **+** (на телефоні це кнопка в центрі нижнього меню; на комп'ютері — клавіша `N`), оберіть канал, і форма покаже лише потрібні поля:
 
-Changes made via Lovable will be committed automatically to this repo.
+| Тип каналу | Поля |
+|---|---|
+| Платна реклама | витрати, покази, кліки, ліди, зустрічі |
+| Холодні листи | листів надіслано, відповідей, ліди, зустрічі, витрати |
+| Органічні пости | постів, охоплення, кліки, ліди, зустрічі, витрати |
 
-**Use your preferred IDE**
+### Імпорт CSV
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+date,channel,spend,impressions,clicks,emails,replies,posts,leads,meetings,note
+2026-10-17,Google Ads,350,4200,96,,,,4,1,Пошукова кампанія
+2026-10-17,Cold mail,,,,40,3,,1,1,Ресторани Орхус
 ```
 
-**Edit a file directly in GitHub**
+- Підходить роздільник `,` або `;`.
+- Дата у форматі `YYYY-MM-DD` або `DD.MM.YYYY`.
+- Десяткову кому розпізнано.
+- Заголовки можна писати українською (`дата`, `канал`, `витрати`, `кліки`, `покази`, `ліди`…).
+- Невідомі канали створяться автоматично.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Де зберігаються дані
 
-**Use GitHub Codespaces**
+Дані лежать у `localStorage` браузера, тобто окремо на кожному пристрої. Щоб перенести дані між ноутбуком і телефоном, зробіть **Бекап JSON** і **Відновити JSON** на іншому пристрої. Бекап варто робити регулярно.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Запуск
 
-## What technologies are used for this project?
+- Локально: відкрийте `index.html` або запустіть `python3 -m http.server` і перейдіть на `http://localhost:8000`.
+- Онлайн: GitHub → Settings → Pages → *Deploy from a branch* → оберіть гілку і `/ (root)`.
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Фірмовий колір задано змінною `--brand` в `assets/styles.css`, а змінити його можна й в інтерфейсі (Налаштування → Фірмовий колір).

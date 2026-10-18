@@ -1,0 +1,11 @@
+{
+  "name": "Webhjerte Growth",
+  "short_name": "Webhjerte",
+  "description": "Контроль залучення клієнтів Webhjerte",
+  "start_url": "./#/overview",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F7F5F3",
+  "theme_color": "#E63950",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
